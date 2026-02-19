@@ -1,0 +1,55 @@
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+body {
+  background: #111;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 100vh;
+  overflow: hidden;
+  font-family: 'Segoe UI', sans-serif;
+}
+
+#game-container {
+  position: relative;
+  width: 900px;
+  height: 480px;
+  box-shadow: 0 0 40px rgba(0,0,0,0.8);
+}
+
+#game-canvas {
+  display: block;
+  width: 900px;
+  height: 480px;
+  image-rendering: pixelated;
+}
+
+#ui-overlay {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  display: flex;
+  gap: 6px;
+  pointer-events: none;
+}
+
+#btn-music,
+#btn-sfx {
+  pointer-events: all;
+  background: rgba(0,0,0,0.5);
+  border: 1px solid rgba(255,255,255,0.3);
+  color: #fff;
+  font-size: 16px;
+  width: 34px;
+  height: 34px;
+  border-radius: 6px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.15s;
+}
+#btn-music:hover,
+#btn-sfx:hover { background: rgba(255,255,255,0.2); }
+#btn-music.muted,
+#btn-sfx.muted { opacity: 0.45; }
