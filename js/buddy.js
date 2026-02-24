@@ -9,7 +9,7 @@ const WORLD_COACHING = {
 The player is in the Enchanted Forest solving math challenges.
 Give short warm hints. Never give the answer — guide them to it.
 Use fun dog-themed phrases occasionally: "Woof!", "I've sniffed this one out!", etc.`,
-    1: `World 1, Challenge 1 (Number Gnome): multiplication and division puzzles, 30-second timer.
+    1: `World 1, Challenge 1 (Number Gnome): multiplication and division — multiple choice, 4 options.
 Hint: remind them of times tables. Escalate specificity with repeated attempts.`,
     2: `World 1, Challenge 2 (Witch's Cauldron): order of operations (PEMDAS).
 Hint: Parentheses first, then multiply/divide, then add/subtract.`,
@@ -58,6 +58,33 @@ export class Buddy {
   #tailPhase = 0;
   #mouthPhase = 0;
   #thinkDots = 0;
+
+  // Callbacks for BuddyPanel
+  #textChunkCallbacks = [];
+  #doneCallbacks = [];
+
+  get recording() { return this.#recording; }
+
+  onTextChunk(cb) { this.#textChunkCallbacks.push(cb); }
+  onInteractionDone(cb) { this.#doneCallbacks.push(cb); }
+
+  /** Free-form chat — sends text directly to the AI as a user message. */
+  chat(text, gameState = {}) {
+    if (!this.#client?.ready) {
+      this._say("Still connecting… try in a sec! 🐾", 3);
+      return;
+    }
+    if (this.#busy) this.#audioManager?.clearVoiceQueue();
+    this.#fullText = '';
+    this.#charIndex = 0;
+    this.#bubbleText = '';
+    this.#bubbleTimer = 8;
+    this.#busy = true;
+    this.#state = 'thinking';
+    this.#stateTimer = 0;
+    this.#audioManager?.clearVoiceQueue();
+    this.#client.requestHelp(text);
+  }
 
   // PTT
   #recording = false;
@@ -122,7 +149,12 @@ export class Buddy {
     if (this.#client) {
       this.#client.setConfiguration(this._buildPrompt(gameState));
     }
-    this._say("Woof! New world — let's go!", 3);
+    this._say("Woof! New world! Press B for hints — costs 1 🦴 each. Earn bones by answering correctly! 🐾", 6);
+  }
+
+  /** Public method to say something directly (e.g. from challenge-manager). */
+  say(text, secs = 4) {
+    this._say(text, secs);
   }
 
   onChallengeSolved(gameState) {
@@ -215,11 +247,13 @@ export class Buddy {
     this.#fullText += chunk;
     this.#state = 'speaking';
     this.#bubbleTimer = Math.max(this.#bubbleTimer, 6 + chunk.length / 15);
+    for (const cb of this.#textChunkCallbacks) cb(chunk);
   }
 
   _onDone() {
     this.#busy = false;
     if (this.#state === 'thinking') this.#state = 'idle';
+    for (const cb of this.#doneCallbacks) cb();
   }
 
   _say(text, secs = 4) {
@@ -247,12 +281,16 @@ export class Buddy {
       this._drawBubble(ctx, sx, sy);
     }
 
-    // "B to ask" indicator when idle and connected
+    // "B to ask Buddy" indicator when idle and connected
     if (this.#state === 'idle' && this.#client?.ready && !this.#busy) {
-      ctx.fillStyle = 'rgba(255,255,200,0.85)';
-      ctx.font = 'bold 11px sans-serif';
+      ctx.fillStyle = 'rgba(0,0,0,0.55)';
+      ctx.beginPath();
+      ctx.roundRect(sx - 16, sy - 64, 82, 22, 5);
+      ctx.fill();
+      ctx.fillStyle = '#ffd700';
+      ctx.font = 'bold 13px "Segoe UI", sans-serif';
       ctx.textAlign = 'center';
-      ctx.fillText('[B]', sx + 18, sy - 46);
+      ctx.fillText('[B] Ask 🦴', sx + 24, sy - 49);
       ctx.textAlign = 'left';
     }
   }

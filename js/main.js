@@ -17,6 +17,7 @@ import { CONFIG } from './config.js';
 import { Engine } from './engine.js';
 import { Player } from './player.js';
 import { Buddy } from './buddy.js';
+import { BuddyPanel } from './buddy-panel.js';
 import { WorldManager } from './world-manager.js';
 import { ChallengeManager } from './challenges/challenge-manager.js';
 
@@ -61,16 +62,19 @@ const challengeManager = new ChallengeManager({
   buddy,
 });
 
-// ── 6. Wire everything together ───────────────────────────────
+// ── 6. Buddy panel ────────────────────────────────────────────
+
+const buddyPanel = new BuddyPanel({ buddy, engine });
+
+// ── 7. Wire everything together ───────────────────────────────
 
 engine.player = player;
 engine.buddy = buddy;
+engine.buddyPanel = buddyPanel;
 engine.worldManager = worldManager;
 engine.challengeManager = challengeManager;
 engine.audioManager = audioManager;
 
-// Expose canvas ref for challenge manager mouse events
-engine._canvas = canvas;
 
 worldManager.engine = engine;
 worldManager.player = player;
@@ -167,20 +171,7 @@ window.addEventListener('click', async () => {
 
 engine.start();
 
-// ── PTT via 'P' key ───────────────────────────────────────────
-
-window.addEventListener('keydown', (e) => {
-  if (e.code === 'KeyP' && !e.repeat) {
-    buddy.startRecording();
-  }
-});
-window.addEventListener('keyup', (e) => {
-  if (e.code === 'KeyP') {
-    buddy.stopRecording();
-  }
-});
-
 // ── Keyboard shortcut reminder ─────────────────────────────────
 
 console.log('%c🐾 Buddy\'s World Adventure', 'font-size:20px;font-weight:bold;color:#ffd700');
-console.log('Controls: A/D or ←/→ Move · Space/↑ Jump · E Interact · B Ask Buddy · P PTT');
+console.log('Controls: A/D or ←/→ Move · Space/↑ Jump · E Interact · B = open Buddy chat · P = voice (when chat open)');

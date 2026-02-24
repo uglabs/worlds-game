@@ -14,12 +14,17 @@ export class Engine {
   // External refs set by main.js
   player = null;
   buddy = null;
+  buddyPanel = null;
   worldManager = null;
   challengeManager = null;
-  audioManager = null;  // set from main.js
+  audioManager = null;
 
   paused = false;
   started = false; // false until first keypress
+
+  // Story phase: 'wait' → 'showing' → 'done'
+  #storyPhase = 'wait';
+  #storyTimer = 5.0; // seconds before auto-advance
 
   // Input state
   keys = {};
@@ -28,15 +33,17 @@ export class Engine {
 
   camera = { x: 0 };
 
-  #hudHintAlpha = 1;   // fades to 0 over 10s
+  #hudHintAlpha = 1;
   #hudHintTimer = 10;
 
   constructor(canvas) {
     this.#canvas = canvas;
     this.#ctx = canvas.getContext('2d');
     this._bindInput();
-    this._bindMuteButton();
   }
+
+  // Expose canvas for challenge-manager hit-testing
+  get _canvas() { return this.#canvas; }
 
   // ── Input ──────────────────────────────────────────────────────
 
@@ -47,10 +54,19 @@ export class Engine {
       }
       this.keys[e.code] = true;
 
-      // First keypress starts the game
       if (!this.started) {
         this.started = true;
         return;
+      }
+
+      // Skip story screen on any key
+      if (this.#storyPhase === 'showing') {
+        this.#storyPhase = 'done';
+      }
+
+      // B key toggles Buddy panel — always, even when paused
+      if (e.code === 'KeyB' && this.#storyPhase === 'done') {
+        this.buddyPanel?.toggle();
       }
     });
 
@@ -60,11 +76,6 @@ export class Engine {
     });
   }
 
-  _bindMuteButton() {
-    // Music/SFX buttons are wired directly in main.js
-  }
-
-  /** Called once per frame — consume and clear just-pressed/released state. */
   _consumeInput() {
     const jp = { ...this.#justPressed };
     const jr = { ...this.#justReleased };
@@ -92,50 +103,56 @@ export class Engine {
   // ── Loop ──────────────────────────────────────────────────────
 
   #loop(timestamp) {
-    const dt = Math.min((timestamp - this.#lastTime) / 16.67, 3); // normalize to 60fps
+    const dt = Math.min((timestamp - this.#lastTime) / 16.67, 3);
     this.#lastTime = timestamp;
 
     const { jp, jr } = this._consumeInput();
 
     if (!this.paused && this.started) {
-      this._update(dt, jp, jr);
+      if (this.#storyPhase === 'showing') {
+        this._updateStory(dt);
+      } else if (this.#storyPhase === 'done') {
+        this._update(dt, jp, jr);
+      } else {
+        // 'wait' — started just became true this frame, transition to story
+        this.#storyPhase = 'showing';
+        this.#storyTimer = 5.0;
+      }
     }
 
     this._render();
     this.#rafId = requestAnimationFrame((t) => this.#loop(t));
   }
 
+  _updateStory(dt) {
+    this.#storyTimer -= dt / 60;
+    if (this.#storyTimer <= 0) {
+      this.#storyPhase = 'done';
+    }
+  }
+
   _update(dt, jp, jr) {
     const world = this.worldManager?.currentWorld;
     if (!world) return;
 
-    // Player update
     this.player?.update(this.keys, world, dt);
 
-    // Update camera
     const worldWidth = world.width;
     this.camera.x = Math.max(0, Math.min(this.player.x - 450, worldWidth - 900));
 
-    // Buddy follow
     this.buddy?.update(dt, this.player);
 
-    // HUD hint timer
     if (this.#hudHintTimer > 0) {
       this.#hudHintTimer -= dt / 60;
       this.#hudHintAlpha = Math.max(0, Math.min(1, this.#hudHintTimer));
     }
 
-    // Jump SFX
     if (this.player._justJumped) {
       this.player._justJumped = false;
       this.audioManager?.playJump();
     }
 
-    // B key — ask Buddy (bark + request)
-    if (jp['KeyB']) {
-      this.buddy?.bark();
-      this.buddy?.requestHelp(this.worldManager.getGameState());
-    }
+    // (B key handled in _bindInput so it works even when paused)
 
     // E key — interact with challenge zone
     if (jp['KeyE']) {
@@ -187,46 +204,35 @@ export class Engine {
       return;
     }
 
+    if (this.#storyPhase !== 'done') {
+      this._renderStoryScreen(ctx);
+      return;
+    }
+
     if (!world) return;
 
-    // Sky / background
     ctx.fillStyle = world.bg;
     ctx.fillRect(0, 0, 900, 480);
 
-    // Background decorations (behind platforms)
     this._renderDecorations(ctx, world, 'back');
 
-    // Ground
     ctx.fillStyle = world.groundColor || '#4a7c2a';
     ctx.fillRect(-this.camera.x, world.groundY, world.width, 480 - world.groundY);
     ctx.fillStyle = world.groundTopColor || '#5a9c32';
     ctx.fillRect(-this.camera.x, world.groundY, world.width, 8);
 
-    // Platforms
     this._renderPlatforms(ctx, world);
-
-    // Foreground decorations
     this._renderDecorations(ctx, world, 'front');
-
-    // Challenge zones
     this._renderZones(ctx, world);
-
-    // Portal
     this._renderPortal(ctx, world);
 
-    // Player
     this.player?.render(ctx, this.camera);
-
-    // Buddy
     this.buddy?.render(ctx, this.camera);
 
-    // HUD
     this._renderHUD(ctx, world);
 
-    // Challenge overlay (drawn on top)
     this.challengeManager?.render(ctx);
-
-    // Transition overlay
+    this.buddyPanel?.render(ctx);
     this.worldManager?.renderTransition(ctx);
   }
 
@@ -234,7 +240,6 @@ export class Engine {
     ctx.fillStyle = '#1a1a2e';
     ctx.fillRect(0, 0, 900, 480);
 
-    // Title
     ctx.fillStyle = '#f0c040';
     ctx.font = 'bold 48px "Segoe UI", sans-serif';
     ctx.textAlign = 'center';
@@ -242,32 +247,176 @@ export class Engine {
 
     ctx.fillStyle = '#a0d8ef';
     ctx.font = '22px "Segoe UI", sans-serif';
-    ctx.fillText('Help Buddy explore 3 magical worlds!', 450, 230);
-    ctx.fillText('Solve puzzles to unlock the portal to the next world.', 450, 262);
+    ctx.fillText('Help Buddy rescue Luna the Fox!', 450, 230);
+    ctx.fillText('Solve challenges in all 3 worlds to save her.', 450, 262);
 
-    // Blinking "Press any key"
     if (Math.floor(Date.now() / 600) % 2 === 0) {
       ctx.fillStyle = '#ffffff';
       ctx.font = 'bold 26px "Segoe UI", sans-serif';
       ctx.fillText('Press any key to start', 450, 330);
     }
 
-    // Controls reminder
     ctx.fillStyle = 'rgba(255,255,255,0.5)';
     ctx.font = '15px "Segoe UI", sans-serif';
     ctx.fillText('A/D or ←/→ Move   ·   Space or ↑ Jump   ·   E Interact   ·   B Ask Buddy', 450, 420);
     ctx.textAlign = 'left';
   }
 
+  _renderStoryScreen(ctx) {
+    const t = Date.now() / 1000;
+    const alpha = Math.min(1, (5.0 - this.#storyTimer) * 2); // fade in
+
+    ctx.fillStyle = '#0a0518';
+    ctx.fillRect(0, 0, 900, 480);
+
+    // Stars in background
+    ctx.fillStyle = 'rgba(255,255,255,0.6)';
+    for (let i = 0; i < 40; i++) {
+      const sx = ((i * 137.5 + 50) % 880) + 10;
+      const sy = ((i * 89.3 + 30) % 440) + 20;
+      const br = 0.3 + 0.7 * Math.abs(Math.sin(t * 1.2 + i));
+      ctx.globalAlpha = br * alpha;
+      ctx.beginPath();
+      ctx.arc(sx, sy, 1.5, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    ctx.globalAlpha = alpha;
+
+    // Luna portrait (simple orange fox silhouette)
+    this._drawLunaFox(ctx, 180, 240, 1.5);
+
+    // Story text
+    ctx.textAlign = 'center';
+    ctx.fillStyle = '#ffd700';
+    ctx.font = 'bold 28px "Segoe UI", sans-serif';
+    ctx.fillText('🦊  A Fox in Danger!', 450, 120);
+
+    ctx.fillStyle = '#e0e8ff';
+    ctx.font = '18px "Segoe UI", sans-serif';
+    const lines = [
+      'Luna the Magic Fox has been captured',
+      'by the Volcano Witch!',
+      '',
+      'Help Buddy solve challenges in all 3 worlds',
+      'to rescue her and break the spell.',
+    ];
+    lines.forEach((line, i) => {
+      ctx.fillText(line, 540, 175 + i * 28);
+    });
+
+    // Skip hint (blinking)
+    if (Math.floor(t * 2) % 2 === 0) {
+      ctx.fillStyle = 'rgba(255,255,255,0.6)';
+      ctx.font = '15px "Segoe UI", sans-serif';
+      ctx.fillText('Press any key to start', 450, 440);
+    }
+
+    ctx.globalAlpha = 1;
+    ctx.textAlign = 'left';
+  }
+
+  _drawLunaFox(ctx, cx, cy, scale = 1) {
+    ctx.save();
+    ctx.translate(cx, cy);
+    ctx.scale(scale, scale);
+
+    // Body
+    ctx.fillStyle = '#d4600a';
+    ctx.beginPath();
+    ctx.ellipse(0, 0, 28, 20, 0, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Head
+    ctx.beginPath();
+    ctx.arc(30, -22, 18, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Ears (pointed)
+    ctx.fillStyle = '#d4600a';
+    ctx.beginPath();
+    ctx.moveTo(22, -34); ctx.lineTo(16, -54); ctx.lineTo(32, -40);
+    ctx.closePath(); ctx.fill();
+    ctx.beginPath();
+    ctx.moveTo(36, -34); ctx.lineTo(44, -54); ctx.lineTo(48, -38);
+    ctx.closePath(); ctx.fill();
+
+    // Inner ears
+    ctx.fillStyle = '#ffaaaa';
+    ctx.beginPath();
+    ctx.moveTo(23, -36); ctx.lineTo(18, -50); ctx.lineTo(30, -41);
+    ctx.closePath(); ctx.fill();
+    ctx.beginPath();
+    ctx.moveTo(37, -36); ctx.lineTo(43, -50); ctx.lineTo(46, -40);
+    ctx.closePath(); ctx.fill();
+
+    // White face patch
+    ctx.fillStyle = '#ffe8cc';
+    ctx.beginPath();
+    ctx.ellipse(34, -18, 10, 13, 0.2, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Eye (sparkly)
+    ctx.fillStyle = '#1a0050';
+    ctx.beginPath(); ctx.arc(36, -24, 4, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = '#fff';
+    ctx.beginPath(); ctx.arc(38, -26, 1.5, 0, Math.PI * 2); ctx.fill();
+
+    // Nose
+    ctx.fillStyle = '#3d1a00';
+    ctx.beginPath(); ctx.ellipse(44, -19, 3, 2, 0, 0, Math.PI * 2); ctx.fill();
+
+    // Fluffy tail
+    ctx.fillStyle = '#d4600a';
+    ctx.beginPath();
+    ctx.moveTo(-20, 0);
+    ctx.bezierCurveTo(-50, -10, -60, -30, -45, -45);
+    ctx.bezierCurveTo(-35, -55, -20, -50, -25, -35);
+    ctx.bezierCurveTo(-28, -20, -10, -15, -20, 0);
+    ctx.fill();
+    // Tail tip
+    ctx.fillStyle = '#fff';
+    ctx.beginPath(); ctx.arc(-44, -44, 9, 0, Math.PI * 2); ctx.fill();
+
+    // Magic sparkles around Luna
+    const t2 = Date.now() / 600;
+    ctx.fillStyle = '#a060ff';
+    for (let i = 0; i < 5; i++) {
+      const angle = t2 + i * (Math.PI * 2 / 5);
+      const r = 42 + Math.sin(t2 * 2 + i) * 6;
+      const sx2 = Math.cos(angle) * r;
+      const sy2 = Math.sin(angle) * r - 10;
+      ctx.globalAlpha = 0.5 + 0.5 * Math.sin(t2 + i * 1.3);
+      ctx.beginPath(); ctx.arc(sx2, sy2, 3, 0, Math.PI * 2); ctx.fill();
+    }
+    ctx.globalAlpha = 1;
+    ctx.restore();
+  }
+
   _renderPlatforms(ctx, world) {
+    const t = Date.now();
     for (const p of world.platforms) {
-      ctx.fillStyle = p.color || '#8b7355';
       const sx = p.x - this.camera.x;
       if (sx + p.w < 0 || sx > 900) continue;
+
+      // Glow ring for challenge platforms (drawn behind)
+      if (p.glowColor) {
+        const pulse = 0.2 + 0.15 * Math.sin(t / 400);
+        ctx.fillStyle = p.glowColor.replace('ALPHA', String(pulse));
+        ctx.fillRect(sx - 4, p.y - 4, p.w + 8, p.h + 8);
+      }
+
+      // Main body
+      ctx.fillStyle = p.color || '#8b7355';
       ctx.fillRect(sx, p.y, p.w, p.h);
-      // top highlight
+
+      // Wider top highlight (14px)
       ctx.fillStyle = p.topColor || p.color || '#8b7355';
-      ctx.fillRect(sx, p.y, p.w, 5);
+      ctx.fillRect(sx, p.y, p.w, 14);
+
+      // Bright outline
+      ctx.strokeStyle = 'rgba(255,255,255,0.25)';
+      ctx.lineWidth = 2;
+      ctx.strokeRect(sx, p.y, p.w, p.h);
     }
   }
 
@@ -284,10 +433,8 @@ export class Engine {
   _renderDecoration(ctx, d, sx, t) {
     switch (d.type) {
       case 'tree': {
-        // trunk
         ctx.fillStyle = '#5d3a1a';
         ctx.fillRect(sx + d.w * 0.4, d.y + d.h * 0.5, d.w * 0.2, d.h * 0.5);
-        // foliage
         ctx.fillStyle = d.color || '#2d6a2d';
         ctx.beginPath();
         ctx.arc(sx + d.w / 2, d.y + d.h * 0.4, d.w * 0.45, 0, Math.PI * 2);
@@ -302,7 +449,6 @@ export class Engine {
         ctx.beginPath();
         ctx.ellipse(sx + d.w / 2, d.y + d.h * 0.4, d.w * 0.5, d.h * 0.45, 0, Math.PI, 0);
         ctx.fill();
-        // glow dots
         ctx.fillStyle = `rgba(255,255,200,${0.3 + glow * 0.5})`;
         ctx.beginPath();
         ctx.arc(sx + d.w * 0.35, d.y + d.h * 0.3, 4, 0, Math.PI * 2);
@@ -372,7 +518,6 @@ export class Engine {
       if (sx + z.w < 0 || sx > 900) continue;
 
       if (z.solved) {
-        // Solved — golden shimmer
         ctx.fillStyle = 'rgba(255,215,0,0.25)';
         ctx.fillRect(sx, z.y, z.w, z.h);
         ctx.strokeStyle = '#ffd700';
@@ -383,7 +528,6 @@ export class Engine {
         ctx.textAlign = 'center';
         ctx.fillText('✓', sx + z.w / 2, z.y - 8);
       } else {
-        // Unsolved — pulsing glow
         const pulse = 0.4 + 0.3 * Math.sin(t * 2.5 + z.id);
         ctx.fillStyle = `rgba(100,180,255,${pulse * 0.3})`;
         ctx.fillRect(sx, z.y, z.w, z.h);
@@ -391,13 +535,11 @@ export class Engine {
         ctx.lineWidth = 2;
         ctx.strokeRect(sx, z.y, z.w, z.h);
 
-        // Label above
         ctx.fillStyle = '#ffffff';
         ctx.font = 'bold 13px sans-serif';
         ctx.textAlign = 'center';
         ctx.fillText(z.label, sx + z.w / 2, z.y - 8);
 
-        // "Press E" hint if near
         if (z._playerNear) {
           ctx.fillStyle = 'rgba(255,255,255,0.9)';
           ctx.font = '12px sans-serif';
@@ -417,7 +559,6 @@ export class Engine {
     const t = Date.now() / 1000;
     const locked = portal.locked;
 
-    // Arch shape
     const archX = sx;
     const archY = portal.y;
     const archW = 70;
@@ -430,7 +571,6 @@ export class Engine {
       const glow = 0.7 + 0.3 * Math.sin(t * 3);
       ctx.fillStyle = `rgba(80,20,160,${glow * 0.5})`;
       ctx.strokeStyle = `rgba(180,100,255,${glow})`;
-      // Outer glow
       ctx.shadowColor = '#a050ff';
       ctx.shadowBlur = 20 * glow;
     }
@@ -445,7 +585,6 @@ export class Engine {
     ctx.fill();
     ctx.shadowBlur = 0;
 
-    // Inner fill
     ctx.fillStyle = locked ? 'rgba(30,30,50,0.8)' : `rgba(120,40,220,${0.5 + 0.3 * Math.sin(t * 4)})`;
     ctx.beginPath();
     ctx.moveTo(archX + 8, archY + archH);
@@ -454,7 +593,6 @@ export class Engine {
     ctx.lineTo(archX + archW - 8, archY + archH);
     ctx.fill();
 
-    // Lock icon or arrow
     ctx.fillStyle = locked ? '#888' : '#fff';
     ctx.font = locked ? '24px sans-serif' : 'bold 20px sans-serif';
     ctx.textAlign = 'center';
@@ -463,14 +601,14 @@ export class Engine {
   }
 
   _renderHUD(ctx, world) {
-    // World name
+    // World name + background
     ctx.fillStyle = 'rgba(0,0,0,0.55)';
     ctx.fillRect(8, 8, 260, 38);
     ctx.fillStyle = '#f0e080';
     ctx.font = 'bold 15px "Segoe UI", sans-serif';
     ctx.fillText(`World ${world.worldIndex + 1}: ${world.name}`, 16, 32);
 
-    // Progress dots
+    // Zone progress dots
     const dotX = 276;
     for (let i = 0; i < 3; i++) {
       const solved = world.challengeZones[i]?.solved;
@@ -483,6 +621,25 @@ export class Engine {
       ctx.stroke();
     }
 
+    // Hearts (lives)
+    const lives = this.challengeManager?.lives ?? 3;
+    ctx.font = '18px sans-serif';
+    for (let i = 0; i < 3; i++) {
+      ctx.fillStyle = i < lives ? '#ff4040' : '#444';
+      ctx.fillText(i < lives ? '❤️' : '🖤', 10 + i * 26, 68);
+    }
+
+    // Credits
+    const credits = this.challengeManager?.credits ?? 0;
+    ctx.fillStyle = 'rgba(0,0,0,0.5)';
+    ctx.fillRect(8, 74, 90, 22);
+    ctx.fillStyle = credits > 0 ? '#ffd700' : '#888';
+    ctx.font = 'bold 13px "Segoe UI", sans-serif';
+    ctx.fillText(`🦴 ×${credits}`, 14, 90);
+
+    // Luna rescue progress (top-right)
+    this._renderLunaProgress(ctx);
+
     // Buddy hint (fades after 10s)
     if (this.#hudHintAlpha > 0) {
       ctx.fillStyle = `rgba(255,255,255,${this.#hudHintAlpha * 0.75})`;
@@ -491,5 +648,44 @@ export class Engine {
       ctx.fillText('🐾  B = Ask Buddy', 892, 30);
       ctx.textAlign = 'left';
     }
+  }
+
+  _renderLunaProgress(ctx) {
+    // Show world completion segments: how far has the player gotten?
+    const currentWorldIdx = this.worldManager?.worldIndex ?? 0;
+    const segW = 50, segH = 12, gap = 6;
+    const totalW = 3 * segW + 2 * gap;
+    const startX = 900 - totalW - 10;
+    const startY = 46;
+
+    ctx.fillStyle = 'rgba(0,0,0,0.5)';
+    ctx.fillRect(startX - 6, startY - 14, totalW + 12, segH + 20);
+
+    ctx.fillStyle = 'rgba(255,255,200,0.7)';
+    ctx.font = '10px "Segoe UI", sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillText('🦊 Luna', startX + totalW / 2, startY - 2);
+
+    for (let i = 0; i < 3; i++) {
+      const x = startX + i * (segW + gap);
+      const complete = i < currentWorldIdx;
+      const inProgress = i === currentWorldIdx;
+
+      ctx.fillStyle = complete ? '#50e050' : inProgress ? 'rgba(255,200,0,0.5)' : 'rgba(80,80,80,0.5)';
+      ctx.fillRect(x, startY, segW, segH);
+
+      if (complete) {
+        ctx.fillStyle = '#fff';
+        ctx.font = 'bold 9px sans-serif';
+        ctx.fillText('✓', x + segW / 2, startY + 9);
+      } else if (inProgress) {
+        // Pulse
+        const pulse = 0.4 + 0.3 * Math.sin(Date.now() / 400);
+        ctx.strokeStyle = `rgba(255,200,0,${pulse + 0.4})`;
+        ctx.lineWidth = 2;
+        ctx.strokeRect(x, startY, segW, segH);
+      }
+    }
+    ctx.textAlign = 'left';
   }
 }

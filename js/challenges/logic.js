@@ -2,7 +2,7 @@
  * logic.js — World 2 challenges: pattern completion, grid deduction, rule inference.
  * Zone id 1 = Cloud Sequence, 2 = Oracle's Deduction, 3 = Rule Machine.
  *
- * Exports: LogicChallenge — implements { init, render, handleInput, isDone, getContext }
+ * Exports: LogicChallenge — implements { init, render, handleInput, isDone, isFailed, getContext }
  */
 
 // ── Challenge Data ─────────────────────────────────────────────
@@ -16,9 +16,6 @@ const SEQUENCES = [
 ];
 
 // Grid deduction puzzle — FIXED solution and clues
-// names: index 0=Knight, 1=Wizard, 2=Archer
-// solution[row][col]: value = name index, -1 = don't check
-// Wizard(1) at row0/col0, Knight(0) at row1/col1, Archer(2) at row2/col2
 const DEDUCTION_PUZZLE = {
   names: ['Knight', 'Wizard', 'Archer'],
   rows: 3, cols: 3,
@@ -29,9 +26,9 @@ const DEDUCTION_PUZZLE = {
     'The heroes line up diagonally, top-left to bottom-right.',
   ],
   solution: [
-    [1, -1, -1],   // row 0 (top): Wizard at col 0
-    [-1, 0, -1],   // row 1 (middle): Knight at col 1
-    [-1, -1, 2],   // row 2 (bottom): Archer at col 2
+    [1, -1, -1],
+    [-1, 0, -1],
+    [-1, -1, 2],
   ],
 };
 
@@ -42,61 +39,71 @@ const RULE_MACHINES = [
 ];
 
 // Layout constants
-// Seq panel: _drawPanel(ctx, 450, 240, 580, 400) → y=40 to y=440
-// 4 options: startY=228, optH=44, gap=9 → items at 228,281,334,387 → bottom=431 ✓ (1px over, fine)
-const SEQ_LAYOUT = { startY: 228, optH: 44, gap: 9, optW: 280, cx: 450 };
-
-// Machine panel: _drawPanel(ctx, 450, 240, 580, 400) → y=40 to y=440
-// 4 options: startY=268, optH=38, gap=7 → items at 268,313,358,403 → bottom=441 ✓
-const MACHINE_LAYOUT = { startY: 268, optH: 38, gap: 7, optW: 280, cx: 450 };
+const SEQ_LAYOUT     = { startY: 228, optH: 44, gap: 9,  optW: 280, cx: 450 };
+const MACHINE_LAYOUT = { startY: 268, optH: 38, gap: 7,  optW: 280, cx: 450 };
 
 // ── LogicChallenge ─────────────────────────────────────────────
 
 export class LogicChallenge {
   #zoneId = 1;
   #done = false;
+  #failed = false;
   #feedback = '';
   #feedbackTimer = 0;
   #shake = 0;
   #audio = null;
+  #onCorrect = null;
+
+  // Particles
+  #particles = [];
 
   // C1 — Sequences
   #sequences = [];
   #seqIndex = 0;
+  #seqWrongCount = 0;
 
   // C2 — Deduction grid
-  #grid = null;          // 3×3 array of name indices, -1=empty
-  #selectedNameIdx = null; // click-to-select interaction
+  #grid = null;
+  #selectedNameIdx = null;
   #gridErrors = null;
   #deductionDone = false;
+  #deductWrongCount = 0;
 
   // C3 — Rule machines
   #machines = [];
   #machineIndex = 0;
+  #machineWrongCount = 0;
 
-  init(zone, worldIndex, audioManager) {
+  init(zone, worldIndex, audioManager, callbacks = {}) {
     this.#zoneId = zone.id;
     this.#done = false;
+    this.#failed = false;
     this.#audio = audioManager;
+    this.#onCorrect = callbacks.onCorrect || null;
     this.#feedback = '';
     this.#feedbackTimer = 0;
     this.#shake = 0;
+    this.#particles = [];
 
     if (zone.id === 1) {
       this.#sequences = shuffle([...SEQUENCES]).slice(0, 3);
       this.#seqIndex = 0;
+      this.#seqWrongCount = 0;
     } else if (zone.id === 2) {
       this.#grid = Array.from({ length: 3 }, () => [-1, -1, -1]);
       this.#selectedNameIdx = null;
       this.#gridErrors = null;
       this.#deductionDone = false;
+      this.#deductWrongCount = 0;
     } else {
       this.#machines = shuffle([...RULE_MACHINES]).slice(0, 3);
       this.#machineIndex = 0;
+      this.#machineWrongCount = 0;
     }
   }
 
-  isDone() { return this.#done; }
+  isDone()   { return this.#done; }
+  isFailed() { return this.#failed; }
 
   getContext() {
     if (this.#zoneId === 1) {
@@ -124,6 +131,7 @@ export class LogicChallenge {
   // ── Input ─────────────────────────────────────────────────────
 
   handleInput(ev) {
+    if (this.#failed || this.#done) return;
     if (this.#zoneId === 1) this._seqInput(ev);
     else if (this.#zoneId === 2) this._deductInput(ev);
     else this._machineInput(ev);
@@ -144,28 +152,38 @@ export class LogicChallenge {
 
     if (idx === seq.a) {
       this.#audio?.playCorrect?.();
+      this.#onCorrect?.();
+      this.#seqWrongCount = 0;
       this.#feedback = '✓ Correct!';
       this.#feedbackTimer = 1;
+      const optY = SEQ_LAYOUT.startY + idx * (SEQ_LAYOUT.optH + SEQ_LAYOUT.gap) + SEQ_LAYOUT.optH / 2;
+      this._spawnCorrectParticles(SEQ_LAYOUT.cx, optY);
       this.#seqIndex++;
       if (this.#seqIndex >= this.#sequences.length) this.#done = true;
     } else {
       this.#audio?.playWrong?.();
       this.#shake = 8;
-      this.#feedback = '✗ Try again';
-      this.#feedbackTimer = 1.5;
+      this.#seqWrongCount++;
+      if (this.#seqWrongCount >= 3) {
+        this.#failed = true;
+        this.#feedback = '❌ Too many mistakes!';
+        this.#feedbackTimer = 2.5;
+      } else {
+        this.#feedback = `✗ Try again (${3 - this.#seqWrongCount} left)`;
+        this.#feedbackTimer = 1.5;
+      }
     }
   }
 
   _deductInput(ev) {
     if (ev.type !== 'click') return;
 
-    // Submit button (y=426 to y=454)
+    // Submit button
     if (ev.x >= 350 && ev.x <= 550 && ev.y >= 426 && ev.y <= 454) {
       this._checkDeductSolution();
       return;
     }
 
-    // Click a name token — select it (or deselect if same)
     const ni = this._clickedNameToken(ev.x, ev.y);
     if (ni !== null) {
       this.#selectedNameIdx = (this.#selectedNameIdx === ni) ? null : ni;
@@ -173,22 +191,17 @@ export class LogicChallenge {
       return;
     }
 
-    // Click a grid cell
     const cell = this._clickedGridCell(ev.x, ev.y);
     if (cell) {
       if (this.#selectedNameIdx !== null) {
-        // Remove prior placement of selected name
         for (let r = 0; r < 3; r++) {
           for (let c = 0; c < 3; c++) {
-            if (this.#grid[r][c] === this.#selectedNameIdx) {
-              this.#grid[r][c] = -1;
-            }
+            if (this.#grid[r][c] === this.#selectedNameIdx) this.#grid[r][c] = -1;
           }
         }
         this.#grid[cell.row][cell.col] = this.#selectedNameIdx;
         this.#selectedNameIdx = null;
       } else {
-        // No selection: clear the cell
         this.#grid[cell.row][cell.col] = -1;
       }
       this.#gridErrors = null;
@@ -239,12 +252,21 @@ export class LogicChallenge {
     this.#gridErrors = errors;
     if (allCorrect) {
       this.#audio?.playCorrect?.();
+      this.#onCorrect?.();
+      this._spawnCorrectParticles(450, 240);
       this.#done = true;
     } else {
       this.#audio?.playWrong?.();
       this.#shake = 8;
-      this.#feedback = '✗ Some placements are wrong — re-read the clues';
-      this.#feedbackTimer = 2.5;
+      this.#deductWrongCount++;
+      if (this.#deductWrongCount >= 3) {
+        this.#failed = true;
+        this.#feedback = '❌ Too many mistakes!';
+        this.#feedbackTimer = 2.5;
+      } else {
+        this.#feedback = `✗ Some placements are wrong — re-read the clues (${3 - this.#deductWrongCount} tries left)`;
+        this.#feedbackTimer = 2.5;
+      }
     }
   }
 
@@ -263,15 +285,26 @@ export class LogicChallenge {
 
     if (idx === machine.a) {
       this.#audio?.playCorrect?.();
+      this.#onCorrect?.();
+      this.#machineWrongCount = 0;
       this.#feedback = '✓ You found the rule!';
       this.#feedbackTimer = 1;
+      const optY = MACHINE_LAYOUT.startY + idx * (MACHINE_LAYOUT.optH + MACHINE_LAYOUT.gap) + MACHINE_LAYOUT.optH / 2;
+      this._spawnCorrectParticles(MACHINE_LAYOUT.cx, optY);
       this.#machineIndex++;
       if (this.#machineIndex >= this.#machines.length) this.#done = true;
     } else {
       this.#audio?.playWrong?.();
       this.#shake = 8;
-      this.#feedback = '✗ Not quite — look at the pattern again';
-      this.#feedbackTimer = 2;
+      this.#machineWrongCount++;
+      if (this.#machineWrongCount >= 3) {
+        this.#failed = true;
+        this.#feedback = '❌ Too many mistakes!';
+        this.#feedbackTimer = 2.5;
+      } else {
+        this.#feedback = `✗ Not quite — look at the pattern (${3 - this.#machineWrongCount} left)`;
+        this.#feedbackTimer = 2;
+      }
     }
   }
 
@@ -284,26 +317,96 @@ export class LogicChallenge {
     return null;
   }
 
+  // ── Particles ─────────────────────────────────────────────────
+
+  _spawnCorrectParticles(bx, by) {
+    for (let i = 0; i < 9; i++) {
+      const angle = -Math.PI * 0.8 + (Math.random() - 0.5) * Math.PI * 1.3;
+      const speed = 60 + Math.random() * 110;
+      this.#particles.push({
+        x: bx + (Math.random() - 0.5) * 50,
+        y: by,
+        vx: Math.cos(angle) * speed,
+        vy: Math.sin(angle) * speed,
+        life: 1,
+        isStar: true,
+        hue: 180 + Math.floor(Math.random() * 60),
+      });
+    }
+    this.#particles.push({ x: bx, y: by - 10, vx: 0, vy: -45, life: 1.5, isStar: false });
+  }
+
+  _drawParticles(ctx) {
+    ctx.save();
+    for (const p of this.#particles) {
+      if (p.isStar) {
+        ctx.globalAlpha = Math.max(0, p.life);
+        ctx.fillStyle = `hsl(${p.hue},100%,65%)`;
+        ctx.beginPath();
+        ctx.arc(p.x, p.y, 5 * p.life, 0, Math.PI * 2);
+        ctx.fill();
+      } else {
+        ctx.globalAlpha = Math.max(0, Math.min(1, p.life));
+        ctx.fillStyle = '#ffd700';
+        ctx.font = 'bold 15px sans-serif';
+        ctx.textAlign = 'center';
+        ctx.fillText('+1 🦴', p.x, p.y);
+      }
+    }
+    ctx.globalAlpha = 1;
+    ctx.restore();
+  }
+
   // ── Render ────────────────────────────────────────────────────
 
   render(ctx) {
-    if (this.#feedbackTimer > 0) this.#feedbackTimer -= 1 / 60;
+    const dtSec = 1 / 60;
+    if (this.#feedbackTimer > 0) this.#feedbackTimer -= dtSec;
     if (this.#shake > 0) this.#shake -= 1;
+
+    // Update particles
+    for (const p of this.#particles) {
+      p.x += p.vx * dtSec;
+      p.y += p.vy * dtSec;
+      if (p.isStar) p.vy += 90 * dtSec;
+      p.life -= dtSec * (p.isStar ? 1.6 : 0.75);
+    }
+    this.#particles = this.#particles.filter(p => p.life > 0);
 
     if (this.#zoneId === 1) this._renderSeq(ctx);
     else if (this.#zoneId === 2) this._renderDeduct(ctx);
     else this._renderMachine(ctx);
+
+    this._drawParticles(ctx);
   }
 
   _renderSeq(ctx) {
     const shake = this.#shake > 0 ? (Math.random() - 0.5) * 5 : 0;
-    // Panel: y=40 to y=440
     this._drawPanel(ctx, 450 + shake, 240, 580, 400);
 
     ctx.textAlign = 'center';
     ctx.fillStyle = '#a0d8ef';
     ctx.font = 'bold 18px sans-serif';
     ctx.fillText('☁️  Cloud Sequence Challenge  ☁️', 450, 115);
+
+    if (this.#done) {
+      ctx.fillStyle = '#50e050';
+      ctx.font = 'bold 28px sans-serif';
+      ctx.fillText('🎉 All sequences solved!', 450, 220);
+      ctx.textAlign = 'left';
+      return;
+    }
+    if (this.#failed) {
+      ctx.fillStyle = '#e05050';
+      ctx.font = 'bold 24px sans-serif';
+      ctx.fillText('❌ Too many mistakes!', 450, 210);
+      ctx.fillStyle = '#fff';
+      ctx.font = '18px sans-serif';
+      ctx.fillText('You lose a life...', 450, 250);
+      ctx.textAlign = 'left';
+      return;
+    }
+
     ctx.fillStyle = '#ccc';
     ctx.font = '14px sans-serif';
     ctx.fillText(`Sequence ${this.#seqIndex + 1}/3 — What comes next?`, 450, 143);
@@ -320,21 +423,19 @@ export class LogicChallenge {
     ctx.font = '13px sans-serif';
     ctx.fillText('Click or press 1 / 2 / 3 / 4', 450, 220);
 
-    // Options — use SEQ_LAYOUT
     const { startY, optH, gap, optW } = SEQ_LAYOUT;
+    const isWrong = this.#feedbackTimer > 0 && this.#feedback.startsWith('✗');
     seq.options.forEach((opt, i) => {
       const oy = startY + i * (optH + gap);
-      ctx.fillStyle = 'rgba(30,80,160,0.5)';
+      ctx.fillStyle = isWrong ? 'rgba(200,60,60,0.35)' : 'rgba(30,80,160,0.5)';
       ctx.fillRect(310, oy, optW, optH);
-      ctx.strokeStyle = '#6af';
+      ctx.strokeStyle = isWrong ? '#ff6060' : '#6af';
       ctx.lineWidth = 2;
       ctx.strokeRect(310, oy, optW, optH);
-      // Number label
       ctx.fillStyle = '#ffd700';
       ctx.font = 'bold 14px sans-serif';
       ctx.textAlign = 'left';
       ctx.fillText(`${i + 1}.`, 318, oy + optH / 2 + 5);
-      // Option text
       ctx.fillStyle = '#fff';
       ctx.font = 'bold 22px sans-serif';
       ctx.textAlign = 'center';
@@ -352,13 +453,30 @@ export class LogicChallenge {
 
   _renderDeduct(ctx) {
     const shake = this.#shake > 0 ? (Math.random() - 0.5) * 4 : 0;
-    // Panel: _drawPanel(450, 240, 640, 440) → y=20 to y=460
     this._drawPanel(ctx, 450 + shake, 240, 640, 440);
 
     ctx.textAlign = 'center';
     ctx.fillStyle = '#ffd080';
     ctx.font = 'bold 17px sans-serif';
     ctx.fillText("⚡  Oracle's Deduction — Grid Puzzle  ⚡", 450, 80);
+
+    if (this.#done) {
+      ctx.fillStyle = '#50e050';
+      ctx.font = 'bold 28px sans-serif';
+      ctx.fillText('🎉 Perfect placement!', 450, 240);
+      ctx.textAlign = 'left';
+      return;
+    }
+    if (this.#failed) {
+      ctx.fillStyle = '#e05050';
+      ctx.font = 'bold 24px sans-serif';
+      ctx.fillText('❌ Too many mistakes!', 450, 210);
+      ctx.fillStyle = '#fff';
+      ctx.font = '18px sans-serif';
+      ctx.fillText('You lose a life...', 450, 250);
+      ctx.textAlign = 'left';
+      return;
+    }
 
     // Clues
     ctx.font = '13px sans-serif';
@@ -370,14 +488,12 @@ export class LogicChallenge {
 
     // Grid
     const gridX = 310, gridY = 168, cellW = 92, cellH = 58;
-    // Column labels
     ctx.fillStyle = '#aaa';
     ctx.font = '12px sans-serif';
     ctx.textAlign = 'center';
     ['Col 1', 'Col 2', 'Col 3'].forEach((label, c) => {
       ctx.fillText(label, gridX + c * cellW + cellW / 2, gridY - 8);
     });
-    // Row labels
     ['Row 1', 'Row 2', 'Row 3'].forEach((label, r) => {
       ctx.fillText(label, gridX - 36, gridY + r * cellH + cellH / 2 + 4);
     });
@@ -392,7 +508,6 @@ export class LogicChallenge {
         ctx.strokeStyle = hasError ? '#ff6060' : '#6af';
         ctx.lineWidth = 2;
         ctx.strokeRect(cx2, cy2, cellW, cellH);
-
         const nameIdx = this.#grid[r][c];
         if (nameIdx >= 0) {
           ctx.fillStyle = '#fff';
@@ -403,7 +518,7 @@ export class LogicChallenge {
       }
     }
 
-    // Name tokens (click to select)
+    // Name tokens
     const names = DEDUCTION_PUZZLE.names;
     const tokenY = 382;
     ctx.font = '13px sans-serif';
@@ -422,12 +537,12 @@ export class LogicChallenge {
       ctx.lineWidth = isSelected ? 3 : 2;
       ctx.strokeRect(tx, tokenY, 100, 36);
       ctx.fillStyle = isSelected ? '#000' : '#fff';
-      ctx.font = `bold 14px sans-serif`;
+      ctx.font = 'bold 14px sans-serif';
       ctx.textAlign = 'center';
       ctx.fillText(name, tx + 50, tokenY + 23);
     });
 
-    // Submit button (y=426 to y=454)
+    // Submit button
     ctx.fillStyle = 'rgba(40,140,60,0.8)';
     ctx.fillRect(350, 426, 200, 28);
     ctx.strokeStyle = '#6f6';
@@ -439,7 +554,7 @@ export class LogicChallenge {
     ctx.fillText('Submit', 450, 445);
 
     if (this.#feedbackTimer > 0) {
-      ctx.fillStyle = '#ff6060';
+      ctx.fillStyle = this.#feedback.startsWith('✗') ? '#ff6060' : '#50e050';
       ctx.font = '13px sans-serif';
       ctx.textAlign = 'center';
       ctx.fillText(this.#feedback, 450, 458);
@@ -449,13 +564,31 @@ export class LogicChallenge {
 
   _renderMachine(ctx) {
     const shake = this.#shake > 0 ? (Math.random() - 0.5) * 5 : 0;
-    // Panel: y=40 to y=440
     this._drawPanel(ctx, 450 + shake, 240, 580, 400);
 
     ctx.textAlign = 'center';
     ctx.fillStyle = '#ffa040';
     ctx.font = 'bold 18px sans-serif';
     ctx.fillText('⚙️  Rule Machine Challenge  ⚙️', 450, 110);
+
+    if (this.#done) {
+      ctx.fillStyle = '#50e050';
+      ctx.font = 'bold 28px sans-serif';
+      ctx.fillText('🎉 All rules found!', 450, 220);
+      ctx.textAlign = 'left';
+      return;
+    }
+    if (this.#failed) {
+      ctx.fillStyle = '#e05050';
+      ctx.font = 'bold 24px sans-serif';
+      ctx.fillText('❌ Too many mistakes!', 450, 210);
+      ctx.fillStyle = '#fff';
+      ctx.font = '18px sans-serif';
+      ctx.fillText('You lose a life...', 450, 250);
+      ctx.textAlign = 'left';
+      return;
+    }
+
     ctx.fillStyle = '#ccc';
     ctx.font = '14px sans-serif';
     ctx.fillText(`Machine ${this.#machineIndex + 1}/3 — Identify the rule`, 450, 134);
@@ -463,7 +596,6 @@ export class LogicChallenge {
     const machine = this.#machines[this.#machineIndex];
     if (!machine) { ctx.textAlign = 'left'; return; }
 
-    // Pairs in 2-column layout to save vertical space
     ctx.fillStyle = '#fff';
     ctx.font = '17px sans-serif';
     machine.pairs.forEach(([inp, out], i) => {
@@ -478,25 +610,22 @@ export class LogicChallenge {
     ctx.font = '14px sans-serif';
     ctx.textAlign = 'center';
     ctx.fillText('Which rule produces these results?', 450, 228);
-    ctx.fillStyle = '#aaa';
     ctx.font = '13px sans-serif';
     ctx.fillText('Click or press 1 / 2 / 3 / 4', 450, 248);
 
-    // Options — use MACHINE_LAYOUT
     const { startY, optH, gap, optW } = MACHINE_LAYOUT;
+    const isWrong = this.#feedbackTimer > 0 && this.#feedback.startsWith('✗');
     machine.options.forEach((opt, i) => {
       const oy = startY + i * (optH + gap);
-      ctx.fillStyle = 'rgba(30,80,160,0.5)';
+      ctx.fillStyle = isWrong ? 'rgba(200,60,60,0.35)' : 'rgba(30,80,160,0.5)';
       ctx.fillRect(310, oy, optW, optH);
-      ctx.strokeStyle = '#6af';
+      ctx.strokeStyle = isWrong ? '#ff6060' : '#6af';
       ctx.lineWidth = 2;
       ctx.strokeRect(310, oy, optW, optH);
-      // Number label
       ctx.fillStyle = '#ffd700';
       ctx.font = 'bold 14px sans-serif';
       ctx.textAlign = 'left';
       ctx.fillText(`${i + 1}.`, 318, oy + optH / 2 + 5);
-      // Option text
       ctx.fillStyle = '#fff';
       ctx.font = 'bold 18px sans-serif';
       ctx.textAlign = 'center';

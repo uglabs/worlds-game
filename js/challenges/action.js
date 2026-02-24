@@ -54,7 +54,7 @@ export class ActionChallenge {
   #c3Done = false;
   #c3LastTick = 0;
 
-  init(zone, worldIndex, audioManager) {
+  init(zone, worldIndex, audioManager, callbacks = {}) {
     this.#zoneId = zone.id;
     this.#done = false;
     this.#phase = 'intro';
@@ -65,7 +65,13 @@ export class ActionChallenge {
     else this._c3Reset();
   }
 
-  isDone() { return this.#done; }
+  isDone()   { return this.#done; }
+  isFailed() {
+    if (this.#zoneId === 1) return this.#phase === 'result' && this.#c1Result === 'lose';
+    if (this.#zoneId === 2) return this.#phase === 'result' && this.#c2FinalResult === 'lose';
+    if (this.#zoneId === 3) return this.#phase === 'result' && this.#c3Done && this.#c3GoodHits < 12;
+    return false;
+  }
 
   getContext() {
     if (this.#zoneId === 1) {

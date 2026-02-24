@@ -1,6 +1,7 @@
 /**
  * World 3 — Volcano Arena
  * Challenge zones on elevated obsidian platforms — dangerous but rewarding climb.
+ * Platforms updated to be much more visible against the dark volcanic background.
  */
 export function createWorld3() {
   return {
@@ -14,34 +15,37 @@ export function createWorld3() {
 
     platforms: [
       // ─── Zone 1 approach ───
-      { x: 160, y: 350, w: 100, h: 20, color: '#5a3020', topColor: '#7a4030' },
-      { x: 320, y: 290, w: 90,  h: 20, color: '#5a3020', topColor: '#7a4030' },
-      { x: 460, y: 235, w: 100, h: 18, color: '#1a0a0a', topColor: '#2a1010' },
-      { x: 600, y: 185, w: 130, h: 18, color: '#1a0a0a', topColor: '#2a1010' }, // ZONE 1 platform ★
-      { x: 780, y: 280, w: 90,  h: 18, color: '#5a3020', topColor: '#7a4030' },
-      { x: 920, y: 330, w: 80,  h: 20, color: '#5a3020', topColor: '#7a4030' },
+      { x: 160, y: 350, w: 100, h: 20, color: '#8a4828', topColor: '#c06040' },
+      { x: 320, y: 290, w: 90,  h: 20, color: '#8a4828', topColor: '#c06040' },
+      { x: 460, y: 235, w: 100, h: 18, color: '#7a3818', topColor: '#b05030' },
+      // ZONE 1 platform ★ — bright orange-red with glow
+      { x: 600, y: 185, w: 130, h: 18, color: '#c05020', topColor: '#e07830', glowColor: 'rgba(255,120,40,ALPHA)' },
+      { x: 780, y: 280, w: 90,  h: 18, color: '#8a4828', topColor: '#c06040' },
+      { x: 920, y: 330, w: 80,  h: 20, color: '#8a4828', topColor: '#c06040' },
 
       // ─── Zone 2 approach ───
-      { x: 1050, y: 355, w: 90,  h: 20, color: '#5a3020', topColor: '#7a4030' },
-      { x: 1190, y: 300, w: 85,  h: 18, color: '#1a0a0a', topColor: '#2a1010' },
-      { x: 1330, y: 250, w: 80,  h: 18, color: '#1a0a0a', topColor: '#2a1010' },
-      { x: 1460, y: 195, w: 130, h: 18, color: '#1a0a0a', topColor: '#2a1010' }, // ZONE 2 platform ★
-      { x: 1640, y: 295, w: 80,  h: 18, color: '#5a3020', topColor: '#7a4030' },
-      { x: 1780, y: 340, w: 80,  h: 20, color: '#5a3020', topColor: '#7a4030' },
+      { x: 1050, y: 355, w: 90,  h: 20, color: '#8a4828', topColor: '#c06040' },
+      { x: 1190, y: 300, w: 85,  h: 18, color: '#7a3818', topColor: '#b05030' },
+      { x: 1330, y: 250, w: 80,  h: 18, color: '#7a3818', topColor: '#b05030' },
+      // ZONE 2 platform ★
+      { x: 1460, y: 195, w: 130, h: 18, color: '#c05020', topColor: '#e07830', glowColor: 'rgba(255,120,40,ALPHA)' },
+      { x: 1640, y: 295, w: 80,  h: 18, color: '#8a4828', topColor: '#c06040' },
+      { x: 1780, y: 340, w: 80,  h: 20, color: '#8a4828', topColor: '#c06040' },
 
       // ─── Zone 3 approach: most dramatic climb ───
-      { x: 1920, y: 355, w: 80,  h: 20, color: '#5a3020', topColor: '#7a4030' },
-      { x: 2060, y: 305, w: 80,  h: 18, color: '#1a0a0a', topColor: '#2a1010' },
-      { x: 2190, y: 260, w: 75,  h: 18, color: '#1a0a0a', topColor: '#2a1010' },
-      { x: 2320, y: 210, w: 70,  h: 18, color: '#1a0a0a', topColor: '#2a1010' },
-      { x: 2440, y: 165, w: 130, h: 18, color: '#1a0a0a', topColor: '#2a1010' }, // ZONE 3 platform ★
-      { x: 2630, y: 295, w: 80,  h: 18, color: '#5a3020', topColor: '#7a4030' },
+      { x: 1920, y: 355, w: 80,  h: 20, color: '#8a4828', topColor: '#c06040' },
+      { x: 2060, y: 305, w: 80,  h: 18, color: '#7a3818', topColor: '#b05030' },
+      { x: 2190, y: 260, w: 75,  h: 18, color: '#7a3818', topColor: '#b05030' },
+      { x: 2320, y: 210, w: 70,  h: 18, color: '#7a3818', topColor: '#b05030' },
+      // ZONE 3 platform ★
+      { x: 2440, y: 165, w: 130, h: 18, color: '#c05020', topColor: '#e07830', glowColor: 'rgba(255,120,40,ALPHA)' },
+      { x: 2630, y: 295, w: 80,  h: 18, color: '#8a4828', topColor: '#c06040' },
 
       // Final approach to portal
-      { x: 2780, y: 340, w: 80,  h: 20, color: '#5a3020', topColor: '#7a4030' },
-      { x: 2920, y: 290, w: 90,  h: 18, color: '#1a0a0a', topColor: '#2a1010' },
-      { x: 3080, y: 330, w: 80,  h: 20, color: '#5a3020', topColor: '#7a4030' },
-      { x: 3230, y: 280, w: 90,  h: 18, color: '#1a0a0a', topColor: '#2a1010' },
+      { x: 2780, y: 340, w: 80,  h: 20, color: '#8a4828', topColor: '#c06040' },
+      { x: 2920, y: 290, w: 90,  h: 18, color: '#7a3818', topColor: '#b05030' },
+      { x: 3080, y: 330, w: 80,  h: 20, color: '#8a4828', topColor: '#c06040' },
+      { x: 3230, y: 280, w: 90,  h: 18, color: '#7a3818', topColor: '#b05030' },
     ],
 
     decorations: [

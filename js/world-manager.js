@@ -232,53 +232,50 @@ export class WorldManager {
     ctx.arc(450, 148, 90, 0, Math.PI * 2);
     ctx.fill();
 
-    // Trophy emoji
-    ctx.font = '88px sans-serif';
-    ctx.textAlign = 'center';
-    const trophyBob = Math.sin(this.#victoryTime * 1.8) * 5;
-    ctx.fillText('🏆', 450, 188 + trophyBob);
+    // Luna fox (left side, freed and happy)
+    this._drawVictoryLuna(ctx);
 
-    // "YOU WIN!" with gradient glow
+    // "YOU SAVED LUNA!" with gradient glow
     const titleScale = 1 + 0.04 * Math.sin(this.#victoryTime * 2);
     ctx.save();
-    ctx.translate(450, 240);
+    ctx.translate(450, 210);
     ctx.scale(titleScale, titleScale);
-    const grad = ctx.createLinearGradient(-180, 0, 180, 0);
+    const grad = ctx.createLinearGradient(-240, 0, 240, 0);
     grad.addColorStop(0, '#ff8c00');
-    grad.addColorStop(0.5, '#ffd700');
+    grad.addColorStop(0.4, '#ffd700');
+    grad.addColorStop(0.6, '#ff9af0');
     grad.addColorStop(1, '#ff8c00');
-    ctx.font = 'bold 54px "Segoe UI", sans-serif';
-    // Shadow
+    ctx.font = 'bold 48px "Segoe UI", sans-serif';
     ctx.fillStyle = 'rgba(0,0,0,0.7)';
-    ctx.fillText('YOU WIN!', 3, 3);
+    ctx.fillText('YOU SAVED LUNA!', 3, 3);
     ctx.fillStyle = grad;
-    ctx.fillText('YOU WIN!', 0, 0);
+    ctx.fillText('YOU SAVED LUNA!', 0, 0);
     ctx.restore();
 
     // Subtitle
     ctx.fillStyle = '#a0e8ff';
     ctx.font = '22px "Segoe UI", sans-serif';
-    ctx.fillText("Buddy's so proud of you!", 450, 295);
+    ctx.fillText('🦊 Luna is free! Buddy is so proud! 🐾', 450, 268);
 
     // Stars row
     const starAlpha = Math.min(1, (this.#victoryTime - 0.5) * 2);
     ctx.fillStyle = `rgba(255,220,50,${starAlpha})`;
     ctx.font = '28px sans-serif';
-    ctx.fillText('⭐  ⭐  ⭐', 450, 332);
+    ctx.fillText('⭐  ⭐  ⭐', 450, 310);
 
     // "All 3 worlds conquered" badge
     if (this.#victoryTime > 1.0) {
       const badgeAlpha = Math.min(1, (this.#victoryTime - 1.0) * 1.5);
       ctx.fillStyle = `rgba(30,80,30,${badgeAlpha * 0.8})`;
       ctx.beginPath();
-      ctx.roundRect(270, 350, 360, 40, 10);
+      ctx.roundRect(250, 328, 400, 40, 10);
       ctx.fill();
       ctx.strokeStyle = `rgba(80,255,80,${badgeAlpha * 0.6})`;
       ctx.lineWidth = 2;
       ctx.stroke();
       ctx.fillStyle = `rgba(120,255,120,${badgeAlpha})`;
       ctx.font = '16px "Segoe UI", sans-serif';
-      ctx.fillText('✓ All 3 worlds conquered!', 450, 375);
+      ctx.fillText('✓ The Volcano Witch is defeated!', 450, 353);
     }
 
     // Buddy dog at bottom-right, waving
@@ -290,6 +287,95 @@ export class WorldManager {
     ctx.fillText('Refresh to play again', 450, 462);
 
     ctx.textAlign = 'left';
+  }
+
+  _drawVictoryLuna(ctx) {
+    const t = this.#victoryTime;
+    const lx = 130, ly = 350;
+    const bob = Math.sin(t * 2.2) * 5;
+
+    ctx.save();
+    ctx.translate(lx, ly + bob);
+
+    // Body
+    ctx.fillStyle = '#d4600a';
+    ctx.beginPath();
+    ctx.ellipse(0, -8, 24, 17, 0, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Head
+    ctx.beginPath();
+    ctx.arc(22, -28, 16, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Ears (pointed)
+    ctx.fillStyle = '#d4600a';
+    ctx.beginPath();
+    ctx.moveTo(14, -38); ctx.lineTo(8, -56); ctx.lineTo(24, -44);
+    ctx.closePath(); ctx.fill();
+    ctx.beginPath();
+    ctx.moveTo(28, -38); ctx.lineTo(36, -56); ctx.lineTo(40, -42);
+    ctx.closePath(); ctx.fill();
+    ctx.fillStyle = '#ffaaaa';
+    ctx.beginPath();
+    ctx.moveTo(15, -40); ctx.lineTo(10, -52); ctx.lineTo(22, -45);
+    ctx.closePath(); ctx.fill();
+    ctx.beginPath();
+    ctx.moveTo(29, -40); ctx.lineTo(35, -52); ctx.lineTo(38, -43);
+    ctx.closePath(); ctx.fill();
+
+    // White face
+    ctx.fillStyle = '#ffe8cc';
+    ctx.beginPath();
+    ctx.ellipse(26, -24, 9, 12, 0.15, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Eye (happy closed arc)
+    ctx.strokeStyle = '#3d1a00';
+    ctx.lineWidth = 2;
+    ctx.lineCap = 'round';
+    ctx.beginPath();
+    ctx.arc(28, -30, 4, -Math.PI * 0.1, Math.PI * 0.9);
+    ctx.stroke();
+
+    // Nose
+    ctx.fillStyle = '#3d1a00';
+    ctx.beginPath(); ctx.ellipse(34, -24, 2.5, 1.8, 0, 0, Math.PI * 2); ctx.fill();
+
+    // Tail (wagging)
+    const tailWag = Math.sin(t * 5) * 18;
+    ctx.fillStyle = '#d4600a';
+    ctx.strokeStyle = '#d4600a';
+    ctx.lineWidth = 8;
+    ctx.lineCap = 'round';
+    ctx.beginPath();
+    ctx.moveTo(-18, -8);
+    ctx.quadraticCurveTo(-38, -18 + tailWag, -42, -36 + tailWag * 0.5);
+    ctx.stroke();
+    // White tip
+    ctx.fillStyle = '#fff';
+    ctx.beginPath(); ctx.arc(-41, -35 + tailWag * 0.5, 7, 0, Math.PI * 2); ctx.fill();
+
+    // Legs
+    ctx.fillStyle = '#d4600a';
+    [-10, 2].forEach(lx2 => {
+      ctx.beginPath(); ctx.roundRect(lx2, 6, 8, 14, 3); ctx.fill();
+    });
+
+    // Magic sparkles (freed!)
+    const sparkHue = (t * 80) % 360;
+    for (let i = 0; i < 6; i++) {
+      const angle = t * 1.5 + i * (Math.PI * 2 / 6);
+      const r = 32 + Math.sin(t * 3 + i) * 8;
+      ctx.fillStyle = `hsl(${(sparkHue + i * 40) % 360},100%,70%)`;
+      ctx.globalAlpha = 0.7;
+      ctx.beginPath();
+      ctx.arc(Math.cos(angle) * r, Math.sin(angle) * r - 15, 3.5, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    ctx.globalAlpha = 1;
+
+    ctx.restore();
   }
 
   _drawVictoryBuddy(ctx) {
